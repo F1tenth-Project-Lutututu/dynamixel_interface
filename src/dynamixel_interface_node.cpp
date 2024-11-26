@@ -220,7 +220,8 @@ void DynamixelInterfaceNode::getTelemetry()
   uint32_t present_position = 0;
   uint32_t present_load = 0;
   uint32_t present_velocity = 0;
-
+  uint32_t present_position_trajectory = 0;
+  uint32_t present_velocity_trajectory = 0;
   auto dxl_comm_bulk_read = groupBulkRead_->txRxPacket();
   if (dxl_comm_bulk_read != COMM_SUCCESS) [[unlikely]] {
     RCLCPP_ERROR(get_logger(), "Failed to get telemetry.");
@@ -259,7 +260,7 @@ void DynamixelInterfaceNode::getTelemetry()
     groupBulkRead_->getData(ID, VELOCITY_TRAJECTORY, LEN_PRESENT_VELOCITY);
     groupBulkRead_->isAvailable(ID, VELOCITY_TRAJECTORY, LEN_PRESENT_VELOCITY))
   {
-    present_position = velocity_trajectory;
+    present_velocity_trajectory = velocity_trajectory;
   } else [[unlikely]] {
     RCLCPP_ERROR(get_logger(), "Failed to retrieve velocity trajectory");
   }
@@ -269,7 +270,7 @@ void DynamixelInterfaceNode::getTelemetry()
     groupBulkRead_->getData(ID, POSITION_TRAJECTORY, LEN_PRESENT_POSITION);
     groupBulkRead_->isAvailable(ID, POSITION_TRAJECTORY, LEN_PRESENT_POSITION))
   {
-    present_position = position_trajectory;
+    present_position_trajectory = position_trajectory;
   } else [[unlikely]] {
     RCLCPP_ERROR(get_logger(), "Failed to retrieve position trajectory");
   }
@@ -279,8 +280,8 @@ void DynamixelInterfaceNode::getTelemetry()
   msg.torque = calculateTorque(present_load);
   msg.position = inverseMapToRange(present_position);
   msg.velocity = calculateVelocity(present_velocity);
-  msg.velocity_setpoint = calculateVelocity(present_velocity);
-  msg.position_setpoint = inverseMapToRange(present_position);
+  msg.velocity_setpoint = calculateVelocity(present_velocity_trajectory);
+  msg.position_setpoint = inverseMapToRange(present_position_trajectory);
 
   pub_state_->publish(msg);
 }
