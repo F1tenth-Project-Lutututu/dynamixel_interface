@@ -15,14 +15,14 @@
 #include "dynamixel_interface/dynamixel_interface_node.hpp"
 
 #include <bitset>
-constexpr int POSITION_MAX = 1429;
-constexpr int POSITION_MIN = 868;
+constexpr int POSITION_MAX = 1420;
+constexpr int POSITION_MIN = 843;
 constexpr float STEERING_OFFSET = 0.5f;
 
 
 constexpr float PROTOCOL_VERSION = 2.0;
-constexpr int BAUDRATE = 1000000;
-constexpr int ID = 1;
+constexpr int BAUDRATE = 4000000;
+constexpr int ID = 24;
 constexpr uint16_t ADDR_OPERATING_MODE = 11;
 constexpr uint16_t ADDR_TORQUE_ENABLE = 64;
 constexpr uint16_t ADDR_GOAL_POSITION = 116;
@@ -112,16 +112,17 @@ DynamixelInterfaceNode::DynamixelInterfaceNode(const rclcpp::NodeOptions & optio
 :  Node("dynamixel_interface", options)
 {
   dynamixel_interface_ = std::make_unique<dynamixel_interface::DynamixelInterface>();
-  param_name_ = this->declare_parameter("param_name", 456);
-  dynamixel_interface_->foo(param_name_);
   uint8_t dxl_error = 0;
   auto serial_port = this->declare_parameter("serial_port", "/dev/ttyUSB0");
+  auto kp = this->declare_parameter("kp", 2000)
+  auto kd = this->declare_parameter("kd", 500)
+  auto ki = this->declare_parameter("ki", 1000)
   // portHandler_ = std::make_unique<dynamixel::PortHandler>(serial_port_);
   // packetHandler_ = std::make_unique<dynamixel::PacketHandler>(PROTOCOL_VERSION);
   portHandler_ = dynamixel::PortHandler::getPortHandler(serial_port.c_str());
   packetHandler_ = dynamixel::PacketHandler::getPacketHandler(PROTOCOL_VERSION);
   groupBulkRead_ = new dynamixel::GroupBulkRead(portHandler_, packetHandler_);
-  if (!groupBulkRead_->addParam(ID, PRESENT_LOAD, 10)) {
+  if (!groupBulkRead_->addParam(ID, PRESENT_LOAD, 18)) {
     RCLCPP_ERROR(get_logger(), "Failed to add parameters to groupBulkRead.");
   }
   auto dxl_comm_result = portHandler_->openPort();
@@ -175,9 +176,12 @@ DynamixelInterfaceNode::DynamixelInterfaceNode(const rclcpp::NodeOptions & optio
       }
     });
   timer_ = this->create_wall_timer(
-    std::chrono::milliseconds(100),
+    std::chrono::duration<double>(1.0 / 300.0),
     std::bind(&DynamixelInterfaceNode::getTelemetry, this));
   pub_state_ = this->create_publisher<ServoState>("pub_position", rclcpp::SensorDataQoS());
+
+  on_set_parameters_callback_handle_ = this->add_on_set_parameters_callback(
+    std::bind(&DynamixelInterfaceNode::onParameterChanged, this, std::placeholders::_1));
 
 }
 
@@ -215,6 +219,66 @@ void DynamixelInterfaceNode::getTelemetry()
   msg.position = inverseMapToRange(present_position);
   msg.velocity = calculateVelocity(present_velocity);
   pub_state_->publish(msg);
+}
+rcl_interfaces::msg::SetParametersResult DynamixelInterfaceNode::onParameterChanged(
+  const std::vector<rclcpp::Parameter> & parameters)
+{
+  rcl_interfaces::msg::SetParametersResult result;
+  try {
+    for (const auto & parameter : parameters) {
+      if (parameter.get_name() == "kp") {
+        RCLCPP_INFO(get_logger(), "kp is updated");
+        auto kp = parameter.as_int();
+        if (kp > 0 && kp < 16383) {
+            uint8_t dxl_error = 0;
+
+          auto dxl_comm_result = packetHandler_->write2ByteTxRx(
+            portHandler_,
+            ID,
+            POSITION_P_GAIN,
+            kp,
+            &dxl_error
+          );
+          result.successful = dxl_comm_result;
+          result.reason = "kp is updated";
+        }
+      } else if (parameter.get_name() == "kd") {
+        RCLCPP_INFO(get_logger(), "kd is updated");
+        auto kd = parameter.as_int();
+        if (kd > 0 && kd < 16383) {
+          uint8_t dxl_error = 0;
+          auto dxl_comm_result = packetHandler_->write2ByteTxRx(
+            portHandler_,
+            ID,
+            POSITION_D_GAIN,
+            kd,
+            &dxl_error
+          );
+          result.successful = dxl_comm_result;
+          result.reason = "kd is updated";
+        }
+      } else if (parameter.get_name() == "ki") {
+        RCLCPP_INFO(get_logger(), "ki is updated");
+        auto ki = parameter.as_int();
+        if (ki > 0 && ki < 16383) {
+          uint8_t dxl_error = 0;
+          auto dxl_comm_result = packetHandler_->write2ByteTxRx(
+            portHandler_,
+            ID,
+            POSITION_D_GAIN,
+            ki,
+            &dxl_error
+          );
+          result.successful = dxl_comm_result;
+          result.reason = "ki is updated";
+        }
+      }
+    }
+  } catch (const rclcpp::exceptions::InvalidParameterTypeException & e) {
+    result.successful = false;
+    result.reason = e.what();
+  }
+  return result;
 }
 }  // namespace dynamixel_interface
 

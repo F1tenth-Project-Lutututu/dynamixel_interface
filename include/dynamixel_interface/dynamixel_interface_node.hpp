@@ -44,6 +44,9 @@ private:
   rclcpp::Publisher<ServoState>::SharedPtr pub_state_;
   rclcpp::TimerBase::SharedPtr timer_;
   void getTelemetry();
+  OnSetParametersCallbackHandle::SharedPtr on_set_parameters_callback_handle_;
+  rcl_interfaces::msg::SetParametersResult onParameterChanged(
+    const std::vector<rclcpp::Parameter> & parameters);
 };
 }  // namespace dynamixel_interface
 
