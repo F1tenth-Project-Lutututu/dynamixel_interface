@@ -29,9 +29,9 @@ constexpr uint16_t ADDR_GOAL_POSITION = 116;
 constexpr uint16_t ADDR_PRESENT_POSITION = 132;
 constexpr uint16_t MIN_POSITION_LIMIT = 48;
 constexpr uint16_t MAX_POSITION_LIMIT = 52;
-constexpr uint16_t POSITION_P_GAIN = 80;
+constexpr uint16_t POSITION_P_GAIN = 84;
 constexpr uint16_t POSITION_I_GAIN = 82;
-constexpr uint16_t POSITION_D_GAIN = 84;
+constexpr uint16_t POSITION_D_GAIN = 80;
 constexpr uint16_t FEEDFORWARD_1ST_GAIN = 88;
 constexpr uint16_t FEEDFORWARD_2ND_GAIN = 90;
 constexpr uint16_t GOAL_POSITION = 116;
@@ -39,7 +39,9 @@ constexpr uint16_t REALTIME_TICK = 120;
 constexpr uint16_t PRESENT_LOAD = 126;
 constexpr uint16_t PRESENT_VELOCITY = 128;
 constexpr uint16_t PRESENT_POSITION = 132;
-constexpr uint16_t PRESENT_TEMPERATURE = 146;
+constexpr uint16_t VELOCITY_TRAJECTORY = 136;
+constexpr uint16_t POSITION_TRAJECTORY = 140;
+constexpr uint16_t GROUP_LEN = 18;
 
 constexpr uint8_t LEN_PRESENT_POSITION = 4;
 constexpr uint8_t LEN_PRESENT_VELOCITY = 4;
@@ -114,9 +116,9 @@ DynamixelInterfaceNode::DynamixelInterfaceNode(const rclcpp::NodeOptions & optio
   dynamixel_interface_ = std::make_unique<dynamixel_interface::DynamixelInterface>();
   uint8_t dxl_error = 0;
   auto serial_port = this->declare_parameter("serial_port", "/dev/ttyUSB0");
-  auto kp = this->declare_parameter("kp", 2000)
-  auto kd = this->declare_parameter("kd", 500)
-  auto ki = this->declare_parameter("ki", 1000)
+  auto kp = this->declare_parameter("kp", 2000);
+  auto kd = this->declare_parameter("kd", 500);
+  auto ki = this->declare_parameter("ki", 1000);
   // portHandler_ = std::make_unique<dynamixel::PortHandler>(serial_port_);
   // packetHandler_ = std::make_unique<dynamixel::PacketHandler>(PROTOCOL_VERSION);
   portHandler_ = dynamixel::PortHandler::getPortHandler(serial_port.c_str());
@@ -145,6 +147,33 @@ DynamixelInterfaceNode::DynamixelInterfaceNode(const rclcpp::NodeOptions & optio
   if (dxl_comm_result != COMM_SUCCESS) {
     RCLCPP_ERROR(get_logger(), "Failed to set Position Control Mode.");
   }
+  dxl_comm_result = packetHandler_->write2ByteTxRx(
+    portHandler_,
+    ID,
+    POSITION_P_GAIN,
+    kp,
+    &dxl_error
+  );
+  if (dxl_comm_result != COMM_SUCCESS) {
+    RCLCPP_ERROR(get_logger(), "Failed to set kp.");
+  }
+  dxl_comm_result = packetHandler_->write2ByteTxRx(
+    portHandler_,
+    ID,
+    POSITION_D_GAIN,
+    kd,
+    &dxl_error
+  );
+  if (dxl_comm_result != COMM_SUCCESS) {
+    RCLCPP_ERROR(get_logger(), "Failed to set kd.");
+  }
+  dxl_comm_result = packetHandler_->write2ByteTxRx(
+    portHandler_,
+    ID,
+    POSITION_I_GAIN,
+    ki,
+    &dxl_error
+  );
   dxl_comm_result = packetHandler_->write1ByteTxRx(
     portHandler_,
     ID,
@@ -162,19 +191,20 @@ DynamixelInterfaceNode::DynamixelInterfaceNode(const rclcpp::NodeOptions & optio
     {
       uint8_t dxl_error = 0;
       uint32_t goal_position = mapToRange(msg->steering_angle);
-      auto dxl_comm_result = packetHandler_->write4ByteTxRx(
+
+      if (auto dxl_comm_result = packetHandler_->write4ByteTxRx(
         portHandler_,
         ID,
         ADDR_GOAL_POSITION,
         goal_position,
         &dxl_error
-      );
-      if (dxl_comm_result != COMM_SUCCESS) {
+      ); dxl_comm_result != COMM_SUCCESS) [[unlikely]] {
         RCLCPP_INFO(get_logger(), "%s", packetHandler_->getTxRxResult(dxl_comm_result));
-      } else if (dxl_error != 0) {
+      } else if (dxl_error != 0) [[unlikely]] {
         RCLCPP_INFO(get_logger(), "%s", packetHandler_->getRxPacketError(dxl_error));
       }
     });
+
   timer_ = this->create_wall_timer(
     std::chrono::duration<double>(1.0 / 300.0),
     std::bind(&DynamixelInterfaceNode::getTelemetry, this));
@@ -190,36 +220,71 @@ void DynamixelInterfaceNode::getTelemetry()
   uint32_t present_position = 0;
   uint32_t present_load = 0;
   uint32_t present_velocity = 0;
+
   auto dxl_comm_bulk_read = groupBulkRead_->txRxPacket();
-  if (dxl_comm_bulk_read != COMM_SUCCESS) {
+  if (dxl_comm_bulk_read != COMM_SUCCESS) [[unlikely]] {
     RCLCPP_ERROR(get_logger(), "Failed to get telemetry.");
     return;
   }
+
   // Torque (Load)
-  if (groupBulkRead_->isAvailable(ID, PRESENT_LOAD, LEN_PRESENT_LOAD)) {
-    present_load = groupBulkRead_->getData(ID, PRESENT_LOAD, LEN_PRESENT_LOAD);
-  } else {
+  if (auto load = groupBulkRead_->getData(ID, PRESENT_LOAD, LEN_PRESENT_LOAD);
+    groupBulkRead_->isAvailable(ID, PRESENT_LOAD, LEN_PRESENT_LOAD))
+  {
+    present_load = load;
+  } else [[unlikely]] {
     RCLCPP_ERROR(get_logger(), "Failed to retrieve torque");
   }
+
   // Velocity
-  if (groupBulkRead_->isAvailable(ID, PRESENT_VELOCITY, LEN_PRESENT_VELOCITY)) {
-    present_velocity = groupBulkRead_->getData(ID, PRESENT_VELOCITY, LEN_PRESENT_VELOCITY);
-  } else {
+  if (auto velocity = groupBulkRead_->getData(ID, PRESENT_VELOCITY, LEN_PRESENT_VELOCITY);
+    groupBulkRead_->isAvailable(ID, PRESENT_VELOCITY, LEN_PRESENT_VELOCITY))
+  {
+    present_velocity = velocity;
+  } else [[unlikely]] {
     RCLCPP_ERROR(get_logger(), "Failed to retrieve velocity");
   }
+
   // Position
-  if (groupBulkRead_->isAvailable(ID, PRESENT_POSITION, LEN_PRESENT_POSITION)) {
-    present_position = groupBulkRead_->getData(ID, PRESENT_POSITION, LEN_PRESENT_POSITION);
-  } else {
+  if (auto position = groupBulkRead_->getData(ID, PRESENT_POSITION, LEN_PRESENT_POSITION);
+    groupBulkRead_->isAvailable(ID, PRESENT_POSITION, LEN_PRESENT_POSITION))
+  {
+    present_position = position;
+  } else [[unlikely]] {
     RCLCPP_ERROR(get_logger(), "Failed to retrieve position");
   }
+
+  // Velocity Trajectory
+  if (auto velocity_trajectory =
+    groupBulkRead_->getData(ID, VELOCITY_TRAJECTORY, LEN_PRESENT_VELOCITY);
+    groupBulkRead_->isAvailable(ID, VELOCITY_TRAJECTORY, LEN_PRESENT_VELOCITY))
+  {
+    present_position = velocity_trajectory;
+  } else [[unlikely]] {
+    RCLCPP_ERROR(get_logger(), "Failed to retrieve velocity trajectory");
+  }
+
+  // Position Trajectory
+  if (auto position_trajectory =
+    groupBulkRead_->getData(ID, POSITION_TRAJECTORY, LEN_PRESENT_POSITION);
+    groupBulkRead_->isAvailable(ID, POSITION_TRAJECTORY, LEN_PRESENT_POSITION))
+  {
+    present_position = position_trajectory;
+  } else [[unlikely]] {
+    RCLCPP_ERROR(get_logger(), "Failed to retrieve position trajectory");
+  }
+
   auto msg = ServoState();
   msg.header.stamp = this->now();
   msg.torque = calculateTorque(present_load);
   msg.position = inverseMapToRange(present_position);
   msg.velocity = calculateVelocity(present_velocity);
+  msg.velocity_setpoint = calculateVelocity(present_velocity);
+  msg.position_setpoint = inverseMapToRange(present_position);
+
   pub_state_->publish(msg);
 }
+
 rcl_interfaces::msg::SetParametersResult DynamixelInterfaceNode::onParameterChanged(
   const std::vector<rclcpp::Parameter> & parameters)
 {
@@ -230,7 +295,7 @@ rcl_interfaces::msg::SetParametersResult DynamixelInterfaceNode::onParameterChan
         RCLCPP_INFO(get_logger(), "kp is updated");
         auto kp = parameter.as_int();
         if (kp > 0 && kp < 16383) {
-            uint8_t dxl_error = 0;
+          uint8_t dxl_error = 0;
 
           auto dxl_comm_result = packetHandler_->write2ByteTxRx(
             portHandler_,
@@ -239,7 +304,7 @@ rcl_interfaces::msg::SetParametersResult DynamixelInterfaceNode::onParameterChan
             kp,
             &dxl_error
           );
-          result.successful = dxl_comm_result;
+          result.successful = !dxl_comm_result;
           result.reason = "kp is updated";
         }
       } else if (parameter.get_name() == "kd") {
@@ -254,7 +319,8 @@ rcl_interfaces::msg::SetParametersResult DynamixelInterfaceNode::onParameterChan
             kd,
             &dxl_error
           );
-          result.successful = dxl_comm_result;
+          // not dxl_comm_result
+          result.successful = !dxl_comm_result;
           result.reason = "kd is updated";
         }
       } else if (parameter.get_name() == "ki") {
@@ -265,11 +331,11 @@ rcl_interfaces::msg::SetParametersResult DynamixelInterfaceNode::onParameterChan
           auto dxl_comm_result = packetHandler_->write2ByteTxRx(
             portHandler_,
             ID,
-            POSITION_D_GAIN,
+            POSITION_I_GAIN,
             ki,
             &dxl_error
           );
-          result.successful = dxl_comm_result;
+          result.successful = !dxl_comm_result;
           result.reason = "ki is updated";
         }
       }
