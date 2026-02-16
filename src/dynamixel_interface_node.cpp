@@ -209,6 +209,7 @@ DynamixelInterfaceNode::DynamixelInterfaceNode(const rclcpp::NodeOptions & optio
     std::chrono::duration<double>(1.0 / 300.0),
     std::bind(&DynamixelInterfaceNode::getTelemetry, this));
   pub_state_ = this->create_publisher<ServoState>("pub_position", rclcpp::SensorDataQoS());
+  pub_servo_ok_ = this->create_publisher<std_msgs::msg::Bool>("servo/ok", rclcpp::QoS(1).reliable());
 
   on_set_parameters_callback_handle_ = this->add_on_set_parameters_callback(
     std::bind(&DynamixelInterfaceNode::onParameterChanged, this, std::placeholders::_1));
@@ -225,6 +226,9 @@ void DynamixelInterfaceNode::getTelemetry()
   auto dxl_comm_bulk_read = groupBulkRead_->txRxPacket();
   if (dxl_comm_bulk_read != COMM_SUCCESS) [[unlikely]] {
     RCLCPP_ERROR(get_logger(), "Failed to get telemetry.");
+    auto ok_msg = std_msgs::msg::Bool();
+    ok_msg.data = false;
+    pub_servo_ok_->publish(ok_msg);
     return;
   }
 
@@ -284,6 +288,10 @@ void DynamixelInterfaceNode::getTelemetry()
   msg.position_setpoint = inverseMapToRange(present_position_trajectory);
 
   pub_state_->publish(msg);
+
+  auto ok_msg = std_msgs::msg::Bool();
+  ok_msg.data = true;
+  pub_servo_ok_->publish(ok_msg);
 }
 
 rcl_interfaces::msg::SetParametersResult DynamixelInterfaceNode::onParameterChanged(
