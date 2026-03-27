@@ -211,7 +211,7 @@ DynamixelInterfaceNode::DynamixelInterfaceNode(const rclcpp::NodeOptions & optio
     std::chrono::duration<double>(1.0 / 300.0),
     std::bind(&DynamixelInterfaceNode::getTelemetry, this));
   pub_state_ = this->create_publisher<ServoState>("pub_position", rclcpp::SensorDataQoS());
-  pub_servo_ok_ = this->create_publisher<ServoStatus_msg>("servo/ok", rclcpp::QoS(1).reliable());
+  pub_servo_status_ = this->create_publisher<ServoStatus_msg>("servo/status", rclcpp::QoS(1).reliable());
 
   on_set_parameters_callback_handle_ = this->add_on_set_parameters_callback(
     std::bind(&DynamixelInterfaceNode::onParameterChanged, this, std::placeholders::_1));
@@ -232,7 +232,7 @@ void DynamixelInterfaceNode::getTelemetry()
     status_msg.ok = false;
     status_msg.control_msg_stamp = last_control_stamp_;
     status_msg.servo_set_stamp = last_servo_set_stamp_;
-    pub_servo_ok_->publish(status_msg);
+    pub_servo_status_->publish(status_msg);
     return;
   }
 
@@ -297,7 +297,7 @@ void DynamixelInterfaceNode::getTelemetry()
   status_msg.ok = true;
   status_msg.control_msg_stamp = last_control_stamp_;
   status_msg.servo_set_stamp = last_servo_set_stamp_;
-  pub_servo_ok_->publish(status_msg);
+  pub_servo_status_->publish(status_msg);
 }
 
 rcl_interfaces::msg::SetParametersResult DynamixelInterfaceNode::onParameterChanged(
