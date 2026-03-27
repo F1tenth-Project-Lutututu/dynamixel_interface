@@ -44,7 +44,7 @@ private:
   // std::unique_ptr<dynamixel::PacketHandler> packetHandler_;
   rclcpp::Subscription<Control>::SharedPtr sub_control_;
   rclcpp::Publisher<ServoState>::SharedPtr pub_state_;
-  rclcpp::Publisher<ServoStatus_msg>::SharedPtr pub_servo_ok_;
+  rclcpp::Publisher<ServoStatus_msg>::SharedPtr pub_servo_status_;
   rclcpp::TimerBase::SharedPtr timer_;
   builtin_interfaces::msg::Time last_control_stamp_{};
   builtin_interfaces::msg::Time last_servo_set_stamp_{};
