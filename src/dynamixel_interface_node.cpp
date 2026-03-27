@@ -203,13 +203,15 @@ DynamixelInterfaceNode::DynamixelInterfaceNode(const rclcpp::NodeOptions & optio
       } else if (dxl_error != 0) [[unlikely]] {
         RCLCPP_INFO(get_logger(), "%s", packetHandler_->getRxPacketError(dxl_error));
       }
+      last_control_stamp_ = msg->header.stamp;
+      last_servo_set_stamp_ = this->now();
     });
 
   timer_ = this->create_wall_timer(
     std::chrono::duration<double>(1.0 / 300.0),
     std::bind(&DynamixelInterfaceNode::getTelemetry, this));
   pub_state_ = this->create_publisher<ServoState>("pub_position", rclcpp::SensorDataQoS());
-  pub_servo_ok_ = this->create_publisher<std_msgs::msg::Bool>("servo/ok", rclcpp::QoS(1).reliable());
+  pub_servo_ok_ = this->create_publisher<ServoStatus_msg>("servo/ok", rclcpp::QoS(1).reliable());
 
   on_set_parameters_callback_handle_ = this->add_on_set_parameters_callback(
     std::bind(&DynamixelInterfaceNode::onParameterChanged, this, std::placeholders::_1));
@@ -226,9 +228,11 @@ void DynamixelInterfaceNode::getTelemetry()
   auto dxl_comm_bulk_read = groupBulkRead_->txRxPacket();
   if (dxl_comm_bulk_read != COMM_SUCCESS) [[unlikely]] {
     RCLCPP_ERROR(get_logger(), "Failed to get telemetry.");
-    auto ok_msg = std_msgs::msg::Bool();
-    ok_msg.data = false;
-    pub_servo_ok_->publish(ok_msg);
+    auto status_msg = ServoStatus_msg();
+    status_msg.ok = false;
+    status_msg.control_msg_stamp = last_control_stamp_;
+    status_msg.servo_set_stamp = last_servo_set_stamp_;
+    pub_servo_ok_->publish(status_msg);
     return;
   }
 
@@ -289,9 +293,11 @@ void DynamixelInterfaceNode::getTelemetry()
 
   pub_state_->publish(msg);
 
-  auto ok_msg = std_msgs::msg::Bool();
-  ok_msg.data = true;
-  pub_servo_ok_->publish(ok_msg);
+  auto status_msg = ServoStatus_msg();
+  status_msg.ok = true;
+  status_msg.control_msg_stamp = last_control_stamp_;
+  status_msg.servo_set_stamp = last_servo_set_stamp_;
+  pub_servo_ok_->publish(status_msg);
 }
 
 rcl_interfaces::msg::SetParametersResult DynamixelInterfaceNode::onParameterChanged(

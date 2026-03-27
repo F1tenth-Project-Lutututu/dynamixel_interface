@@ -2,11 +2,14 @@ cmake_minimum_required(VERSION 3.14)
 project(dynamixel_interface)
 set(CMAKE_CXX_STANDARD 23)
 find_package(ament_cmake_auto REQUIRED)
+find_package(dynamixel_sdk REQUIRED)
 ament_auto_find_build_dependencies(REQUIRED
   ${${PROJECT_NAME}_BUILD_DEPENDS}
   ${${PROJECT_NAME}_BUILDTOOL_DEPENDS}
 )
 add_compile_options(-Wall -Wextra -pedantic -Werror)
+
+
 
 set(DYNAMIXEL_INTERFACE_LIB_SRC
   src/dynamixel_interface.cpp

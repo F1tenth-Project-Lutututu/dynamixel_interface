@@ -18,16 +18,17 @@
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/u_int32.hpp>
-#include <std_msgs/msg/bool.hpp>
 #include "dynamixel_interface/dynamixel_interface.hpp"
 #include <control_interfaces/msg/control.hpp>
 #include <control_interfaces/msg/servo_state.hpp>
+#include <control_interfaces/msg/servo_status.hpp>
 #include <bit>
 namespace dynamixel_interface
 {
 using DynamixelInterfacePtr = std::unique_ptr<dynamixel_interface::DynamixelInterface>;
 using Control = control_interfaces::msg::Control;
 using ServoState = control_interfaces::msg::ServoState;
+using ServoStatus_msg = control_interfaces::msg::ServoStatus;
 class DYNAMIXEL_INTERFACE_PUBLIC DynamixelInterfaceNode : public rclcpp::Node
 {
 public:
@@ -43,8 +44,10 @@ private:
   // std::unique_ptr<dynamixel::PacketHandler> packetHandler_;
   rclcpp::Subscription<Control>::SharedPtr sub_control_;
   rclcpp::Publisher<ServoState>::SharedPtr pub_state_;
-  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr pub_servo_ok_;
+  rclcpp::Publisher<ServoStatus_msg>::SharedPtr pub_servo_ok_;
   rclcpp::TimerBase::SharedPtr timer_;
+  builtin_interfaces::msg::Time last_control_stamp_{};
+  builtin_interfaces::msg::Time last_servo_set_stamp_{};
   void getTelemetry();
   OnSetParametersCallbackHandle::SharedPtr on_set_parameters_callback_handle_;
   rcl_interfaces::msg::SetParametersResult onParameterChanged(
